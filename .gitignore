@@ -1,0 +1,27 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Builds
+dist/
+.next/
+out/
+build/
+coverage/
+
+# Env & secrets
+.env
+.env.local
+.env.*.local
+**/.env
+
+# Logs
+*.log
+npm-debug.log*
+
+# Editor / OS
+.DS_Store
+.idea/
+.vscode/
+*.tsbuildinfo
+next-env.d.ts

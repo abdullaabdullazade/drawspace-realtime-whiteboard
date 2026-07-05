@@ -2,7 +2,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { MoreHorizontal, Trash2, ExternalLink, Pencil, Globe, Lock, Users, Clock, Box, ArrowRight } from 'lucide-react';
+import { MoreHorizontal, Trash2, ExternalLink, Pencil, Globe, Lock, Users, Clock, Box, ArrowRight, Star } from 'lucide-react';
 import { Board } from '@/lib/api';
 
 function timeAgo(dateStr: string, now: number) {
@@ -21,6 +21,8 @@ interface BoardCardProps {
   board: Board;
   onDelete?: (id: string) => void;
   onRename?: (id: string, name: string) => void;
+  isFav?: boolean;
+  onToggleFav?: (id: string) => void;
   now: number;
 }
 
@@ -31,7 +33,7 @@ const GRADIENTS = [
   { from: '#1FA463', to: '#0F7B5A' },
 ];
 
-export default function BoardCard({ board, onDelete, onRename, now }: BoardCardProps) {
+export default function BoardCard({ board, onDelete, onRename, isFav, onToggleFav, now }: BoardCardProps) {
   const [showMenu, setShowMenu] = useState(false);
   const [renaming, setRenaming] = useState(false);
   const [name, setName] = useState(board.name);
@@ -80,6 +82,15 @@ export default function BoardCard({ board, onDelete, onRename, now }: BoardCardP
         <div className="w-11 h-11 rounded-[13px] bg-white/20 backdrop-blur-sm border border-white/25 flex items-center justify-center">
           <Box className="w-[22px] h-[22px] text-white" strokeWidth={2} />
         </div>
+
+        {/* Favorite star */}
+        <button
+          onClick={(e) => { e.preventDefault(); e.stopPropagation(); onToggleFav?.(board.id); }}
+          className="menu-container absolute top-3 left-3 z-30 w-8 h-8 rounded-full flex items-center justify-center text-white bg-black/15 hover:bg-black/30 backdrop-blur-sm transition-colors"
+          title={isFav ? 'Remove from favorites' : 'Add to favorites'}
+        >
+          <Star className={`w-[18px] h-[18px] ${isFav ? 'fill-[#F4B740] text-[#F4B740]' : ''}`} strokeWidth={1.75} />
+        </button>
       </div>
 
       {/* Body */}

@@ -50,7 +50,7 @@ export default function CreateBoardModal({ onClose, onCreate }: CreateBoardModal
           {/* Header */}
           <div className="flex items-center justify-between px-8 py-6 border-b border-[var(--border-light)]">
             <div className="flex items-center gap-4">
-              <div className="w-[40px] h-[40px] rounded-[12px] bg-[var(--primary-gradient)] flex items-center justify-center shadow-[var(--shadow-primary)]">
+              <div className="w-[40px] h-[40px] rounded-[12px] grad-primary flex items-center justify-center shadow-[var(--shadow-primary)]">
                 <Box className="w-5 h-5 text-white" strokeWidth={1.75} />
               </div>
               <h2 className="text-[20px] font-semibold text-[var(--text)] tracking-tight">

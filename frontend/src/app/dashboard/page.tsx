@@ -1,13 +1,25 @@
 'use client';
 import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Plus, Command, LayoutGrid, Star, PenTool, LayoutTemplate, Archive, Trash2, Bell, UserPlus, Users2, Globe, Lock, Sparkles, UserCheck, Clock } from 'lucide-react';
+import { Search, Plus, Command, LayoutGrid, Star, PenTool, LayoutTemplate, Trash2, Bell, Users2, Globe, Lock, Sparkles, UserCheck, Clock, Box, RotateCcw } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import Sidebar from '@/components/Sidebar';
 import BoardCard from '@/components/BoardCard';
 import CreateBoardModal from '@/components/CreateBoardModal';
-import { Board, getBoards, createBoard, deleteBoard, updateBoard } from '@/lib/api';
+import { Board, getBoards, createBoard, deleteBoard, updateBoard, getTrashedBoards, restoreBoard, permanentDeleteBoard } from '@/lib/api';
 import { useAuth } from '@/hooks/useAuth';
+
+function timeAgo(dateStr: string, now: number) {
+  try {
+    const diff = now - new Date(dateStr).getTime();
+    const m = Math.floor(diff / 60000);
+    if (m < 1) return 'Just now';
+    if (m < 60) return `${m}m ago`;
+    const hr = Math.floor(m / 60);
+    if (hr < 24) return `${hr}h ago`;
+    return `${Math.floor(hr / 24)}d ago`;
+  } catch { return ''; }
+}
 
 export default function DashboardPage() {
   const { user, loading: authLoading, logout } = useAuth();
@@ -17,19 +29,30 @@ export default function DashboardPage() {
   const [search, setSearch] = useState('');
   const [showModal, setShowModal] = useState(false);
   const [showNotif, setShowNotif] = useState(false);
+  const [notifRead, setNotifRead] = useState(false);
   const [expanded, setExpanded] = useState(true);
   const [nav, setNav] = useState('boards');
   const [boards, setBoards] = useState<Board[]>([]);
   const [boardsLoading, setBoardsLoading] = useState(true);
+  const [trashed, setTrashed] = useState<Board[]>([]);
+  const [favorites, setFavorites] = useState<string[]>([]);
 
   useEffect(() => {
     setMounted(true);
     setNow(Date.now());
     document.documentElement.classList.remove('dark');
-    // Restore sidebar state so it doesn't reset on navigation
     const saved = localStorage.getItem('sidebar-expanded');
     if (saved !== null) setExpanded(saved === 'true');
+    try { setFavorites(JSON.parse(localStorage.getItem('favorites') || '[]')); } catch { /* ignore */ }
   }, []);
+
+  const toggleFavorite = (id: string) => {
+    setFavorites((prev) => {
+      const next = prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id];
+      localStorage.setItem('favorites', JSON.stringify(next));
+      return next;
+    });
+  };
 
   const toggleSidebar = () => {
     setExpanded((e) => {
@@ -47,6 +70,21 @@ export default function DashboardPage() {
     if (!user) return;
     getBoards().then(setBoards).catch(console.error).finally(() => setBoardsLoading(false));
   }, [user]);
+
+  useEffect(() => {
+    if (nav === 'trash' && user) getTrashedBoards().then(setTrashed).catch(console.error);
+  }, [nav, user]);
+
+  const handleRestore = async (id: string) => {
+    setTrashed((prev) => prev.filter((b) => b.id !== id));
+    try { await restoreBoard(id); const fresh = await getBoards(); setBoards(fresh); }
+    catch (err) { console.error(err); }
+  };
+
+  const handlePermanentDelete = async (id: string) => {
+    setTrashed((prev) => prev.filter((b) => b.id !== id));
+    try { await permanentDeleteBoard(id); } catch (err) { console.error(err); }
+  };
 
   const handleCreate = async (data: { name: string; description: string; isPublic: boolean }) => {
     try {
@@ -95,6 +133,12 @@ export default function DashboardPage() {
         { label: 'Public', value: publicCount, icon: Globe },
         { label: 'Private', value: privateCount, icon: Lock },
       ];
+
+      // Real activity: latest boards by creation time
+      const activity = [...boards]
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, 5)
+        .map((b) => ({ Icon: Sparkles, title: 'Created board', board: b.name, time: timeAgo(b.createdAt, now) }));
 
       return (
         <div className="flex flex-col gap-12">
@@ -165,33 +209,108 @@ export default function DashboardPage() {
               <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
                 {filtered.map((board, i) => (
                   <motion.div key={board.id} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, delay: i * 0.05, ease: "easeOut" }}>
-                    <BoardCard board={board} onDelete={handleDelete} onRename={handleRename} now={now} />
+                    <BoardCard board={board} onDelete={handleDelete} onRename={handleRename} isFav={favorites.includes(board.id)} onToggleFav={toggleFavorite} now={now} />
                   </motion.div>
                 ))}
               </div>
             )}
           </div>
 
-          {/* Recent Activity — full width bottom */}
+          {/* Recent Activity — derived from real boards */}
           <div>
             <h2 className="h2-title text-[var(--text)] mb-6">Recent Activity</h2>
-            <div className="card-premium rounded-[24px] divide-y divide-[var(--border-light)]">
-              {[
-                { icon: Sparkles, title: 'Workspace created', time: 'Just now' },
-                { icon: UserCheck, title: 'You logged in', time: '2 mins ago' },
-                { icon: Clock, title: 'Board updated', time: '5 mins ago' },
-              ].map(({ icon: Icon, title, time }, idx) => (
-                <div key={idx} className="flex items-center gap-4 px-6 py-5">
-                  <div className="w-10 h-10 rounded-[12px] bg-[var(--primary)]/10 flex items-center justify-center text-[var(--primary)] shrink-0">
-                    <Icon className="w-5 h-5" strokeWidth={1.75} />
+            {activity.length === 0 ? (
+              <div className="card-premium rounded-[24px] flex flex-col items-center py-14 text-center">
+                <div className="w-12 h-12 rounded-2xl bg-[var(--bg)] border border-[var(--border)] flex items-center justify-center mb-3">
+                  <Clock className="w-6 h-6 text-[var(--muted)]" strokeWidth={1.5} />
+                </div>
+                <p className="text-[15px] font-medium text-[var(--muted-darker)]">No activity yet</p>
+                <p className="text-[13px] text-[var(--muted)] mt-1">Create a board to get started</p>
+              </div>
+            ) : (
+              <div className="card-premium rounded-[24px] divide-y divide-[var(--border-light)]">
+                {activity.map(({ Icon, title, board, time }, idx) => (
+                  <div key={idx} className="flex items-center gap-4 px-6 py-5">
+                    <div className="w-10 h-10 rounded-[12px] bg-[var(--primary)]/10 flex items-center justify-center text-[var(--primary)] shrink-0">
+                      <Icon className="w-5 h-5" strokeWidth={1.75} />
+                    </div>
+                    <p className="text-[15px] font-medium text-[var(--text)] flex-1">
+                      {title} <span className="text-[var(--primary)]">{board}</span>
+                    </p>
+                    <span className="text-[14px] text-[var(--muted)] shrink-0">{time}</span>
                   </div>
-                  <p className="text-[15px] font-medium text-[var(--text)] flex-1">{title}</p>
-                  <span className="text-[14px] text-[var(--muted)]">{time}</span>
+                ))}
+              </div>
+            )}
+          </div>
+
+        </div>
+      );
+    }
+
+    if (nav === 'trash') {
+      return (
+        <div className="flex flex-col gap-8">
+          <div>
+            <h1 className="h1-title text-[var(--text)]">Trash</h1>
+            <p className="text-[15px] text-[var(--muted)] mt-2">Deleted boards. Restore them or delete forever.</p>
+          </div>
+          {trashed.length === 0 ? (
+            <div className="card-premium flex flex-col items-center justify-center py-24 text-center rounded-[24px]">
+              <div className="w-16 h-16 rounded-[20px] bg-[var(--bg)] border border-[var(--border)] flex items-center justify-center mb-6">
+                <Trash2 className="w-8 h-8 text-[var(--muted)]" strokeWidth={1.5} />
+              </div>
+              <h3 className="h2-title text-[var(--text)] mb-2">Trash is empty</h3>
+              <p className="body-text text-[var(--muted)] max-w-md">Deleted boards will appear here.</p>
+            </div>
+          ) : (
+            <div className="card-premium rounded-[24px] divide-y divide-[var(--border-light)]">
+              {trashed.map((b) => (
+                <div key={b.id} className="flex items-center gap-4 px-6 py-4">
+                  <div className="w-10 h-10 rounded-[12px] grad-primary flex items-center justify-center text-white shrink-0"><Box className="w-5 h-5" strokeWidth={1.75} /></div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-[15px] font-semibold text-[var(--text)] truncate">{b.name}</p>
+                    <p className="text-[13px] text-[var(--muted)] truncate">{b.description || 'No description'}</p>
+                  </div>
+                  <button onClick={() => handleRestore(b.id)} className="flex items-center gap-1.5 px-3.5 py-2 rounded-[10px] text-[13px] font-medium text-[var(--primary)] hover:bg-[var(--primary)]/10 transition-colors">
+                    <RotateCcw className="w-4 h-4" strokeWidth={2} /> Restore
+                  </button>
+                  <button onClick={() => handlePermanentDelete(b.id)} className="flex items-center gap-1.5 px-3.5 py-2 rounded-[10px] text-[13px] font-medium text-[var(--danger)] hover:bg-[var(--danger)]/10 transition-colors">
+                    <Trash2 className="w-4 h-4" strokeWidth={2} /> Delete
+                  </button>
                 </div>
               ))}
             </div>
-          </div>
+          )}
+        </div>
+      );
+    }
 
+    if (nav === 'favorites') {
+      const favBoards = boards.filter((b) => favorites.includes(b.id));
+      return (
+        <div className="flex flex-col gap-8">
+          <div>
+            <h1 className="h1-title text-[var(--text)]">Favorites</h1>
+            <p className="text-[15px] text-[var(--muted)] mt-2">Your starred boards for quick access.</p>
+          </div>
+          {favBoards.length === 0 ? (
+            <div className="card-premium flex flex-col items-center justify-center py-24 text-center rounded-[24px]">
+              <div className="w-16 h-16 rounded-[20px] bg-[var(--bg)] border border-[var(--border)] flex items-center justify-center mb-6">
+                <Star className="w-8 h-8 text-[var(--warning)]" strokeWidth={1.5} />
+              </div>
+              <h3 className="h2-title text-[var(--text)] mb-2">No favorites yet</h3>
+              <p className="body-text text-[var(--muted)] max-w-md">Tap the ⭐ on any board to add it here.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+              {favBoards.map((board, i) => (
+                <motion.div key={board.id} initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25, delay: i * 0.05 }}>
+                  <BoardCard board={board} onDelete={handleDelete} onRename={handleRename} isFav onToggleFav={toggleFavorite} now={now} />
+                </motion.div>
+              ))}
+            </div>
+          )}
         </div>
       );
     }
@@ -199,8 +318,6 @@ export default function DashboardPage() {
     const placeholders: Record<string, { icon: React.ElementType, title: string, desc: string }> = {
       'templates': { icon: LayoutTemplate, title: 'Templates', desc: 'Jumpstart your work with premium templates.' },
       'shared': { icon: Users2, title: 'Shared with me', desc: 'Spaces shared with your account will appear here.' },
-      'favorites': { icon: Star, title: 'Favorites', desc: 'Access your most important spaces instantly.' },
-      'archive': { icon: Archive, title: 'Archive', desc: 'Past projects stored safely.' },
       'trash': { icon: Trash2, title: 'Trash', desc: 'Deleted boards stay here for 30 days.' }
     };
 
@@ -240,7 +357,7 @@ export default function DashboardPage() {
       >
         {/* Floating Top Navbar */}
         <div className="sticky top-4 z-40 px-6 sm:px-10 mb-8">
-          <div className="h-[76px] bg-[var(--card)]/80 backdrop-blur-[24px] rounded-[20px] shadow-[var(--shadow-soft)] border border-[var(--border)] px-6 flex items-center justify-between">
+          <div className="h-[72px] max-w-[1600px] mx-auto bg-[var(--card)] rounded-[20px] shadow-[var(--shadow-md)] border border-[var(--border)] px-5 flex items-center justify-between">
             
             {/* Search Bar */}
             <div className="relative w-full max-w-[420px]">
@@ -258,16 +375,11 @@ export default function DashboardPage() {
 
             {/* Actions */}
             <div className="flex items-center gap-4">
-              <button className="h-[40px] px-4 rounded-[12px] bg-[var(--bg)] border border-[var(--border)] text-[14px] font-medium text-[var(--text)] hover:bg-[var(--card)] transition-colors flex items-center gap-2 shadow-sm hidden md:flex">
-                <UserPlus className="w-4 h-4" /> Invite
-              </button>
-              
-              <div className="w-px h-6 bg-[var(--border)] mx-2 hidden sm:block"></div>
 
               <div className="relative">
                 <button onClick={() => setShowNotif((s) => !s)} className="w-[40px] h-[40px] flex items-center justify-center rounded-full text-[var(--muted-darker)] hover:bg-[var(--bg)] hover:text-[var(--text)] transition-colors relative">
                   <Bell className="w-5 h-5" strokeWidth={1.75} />
-                  <span className="absolute top-2 right-2.5 w-2 h-2 rounded-full bg-[var(--primary)] border-2 border-[var(--card)]"></span>
+                  {!notifRead && <span className="absolute top-2 right-2.5 w-2 h-2 rounded-full bg-[var(--primary)] border-2 border-[var(--card)]"></span>}
                 </button>
                 <AnimatePresence>
                   {showNotif && (
@@ -280,8 +392,14 @@ export default function DashboardPage() {
                       >
                         <div className="flex items-center justify-between px-5 py-4 border-b border-[var(--border-light)]">
                           <h4 className="text-[15px] font-semibold text-[var(--text)]">Notifications</h4>
-                          <span className="text-[13px] font-medium text-[var(--primary)] cursor-pointer">Mark all read</span>
+                          <button onClick={() => setNotifRead(true)} className="text-[13px] font-medium text-[var(--primary)] hover:underline">Mark all read</button>
                         </div>
+                        {notifRead ? (
+                          <div className="px-5 py-10 flex flex-col items-center text-center">
+                            <div className="w-12 h-12 rounded-2xl bg-[var(--bg)] border border-[var(--border)] flex items-center justify-center mb-3"><Bell className="w-6 h-6 text-[var(--muted)]" strokeWidth={1.5} /></div>
+                            <p className="text-[14px] font-medium text-[var(--muted-darker)]">You&apos;re all caught up</p>
+                          </div>
+                        ) : (
                         <div className="divide-y divide-[var(--border-light)]">
                           {[
                             { icon: Sparkles, title: 'Workspace created', time: 'Just now' },
@@ -296,13 +414,14 @@ export default function DashboardPage() {
                             </div>
                           ))}
                         </div>
+                        )}
                       </motion.div>
                     </>
                   )}
                 </AnimatePresence>
               </div>
 
-              <div className="w-[40px] h-[40px] ml-2 rounded-full bg-[var(--primary-gradient)] flex items-center justify-center text-[15px] font-bold text-white shadow-[var(--shadow-primary)] cursor-pointer">
+              <div className="w-[40px] h-[40px] ml-2 rounded-full grad-primary flex items-center justify-center text-[15px] font-bold text-white shadow-[var(--shadow-primary)] cursor-pointer">
                 {userName.charAt(0).toUpperCase()}
               </div>
             </div>

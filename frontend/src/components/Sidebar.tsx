@@ -1,10 +1,22 @@
 'use client';
 import { motion } from 'framer-motion';
 import {
-  LayoutGrid, LayoutTemplate, Users2, Star,
-  Archive, Trash2, Settings, ChevronsLeft, ChevronsRight,
-  LogOut, Layers,
+  LayoutGrid, Star,
+  Trash2, ChevronsLeft, ChevronsRight,
+  LogOut,
 } from 'lucide-react';
+
+// Custom Drawspace logo mark — pen stroke inside a rounded square
+function LogoMark({ className = '' }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 32 32" fill="none" className={className}>
+      <rect x="5" y="5" width="22" height="22" rx="7" fill="white" fillOpacity="0.22" />
+      <path d="M11 21.5 L19.5 9.5" stroke="white" strokeWidth="2.6" strokeLinecap="round" />
+      <path d="M18 8 L22 12 L20 14 L16 10 Z" fill="white" />
+      <circle cx="11" cy="21.5" r="2" fill="white" />
+    </svg>
+  );
+}
 
 interface NavItem {
   id: string;
@@ -14,13 +26,7 @@ interface NavItem {
 
 const NAV: NavItem[] = [
   { id: 'boards', label: 'All Boards', icon: LayoutGrid },
-  { id: 'templates', label: 'Templates', icon: LayoutTemplate },
-  { id: 'shared', label: 'Shared with me', icon: Users2 },
   { id: 'favorites', label: 'Favorites', icon: Star },
-];
-
-const NAV_SECONDARY: NavItem[] = [
-  { id: 'archive', label: 'Archive', icon: Archive },
   { id: 'trash', label: 'Trash', icon: Trash2 },
 ];
 
@@ -67,13 +73,6 @@ export default function Sidebar({ active, onSelect, username, email, expanded, o
     );
   };
 
-  const SectionLabel = ({ children }: { children: React.ReactNode }) =>
-    expanded ? (
-      <p className="text-[11px] font-semibold tracking-[0.12em] uppercase text-[var(--text-3)] mb-2 px-3">{children}</p>
-    ) : (
-      <div className="h-4" />
-    );
-
   return (
     <motion.aside
       initial={false}
@@ -84,8 +83,8 @@ export default function Sidebar({ active, onSelect, username, email, expanded, o
       {/* Header */}
       <div className={`h-16 shrink-0 flex items-center border-b border-[var(--border-light)] ${expanded ? 'px-5 justify-between' : 'px-0 justify-center'}`}>
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-9 h-9 rounded-[11px] bg-[var(--primary-gradient)] flex items-center justify-center shrink-0 shadow-[var(--shadow-primary)]">
-            <Layers className="w-[18px] h-[18px] text-white" strokeWidth={2} />
+          <div className="w-9 h-9 rounded-[11px] grad-primary flex items-center justify-center shrink-0 shadow-[var(--shadow-primary)]">
+            <LogoMark className="w-6 h-6" />
           </div>
           {expanded && <span className="text-[18px] font-bold tracking-tight text-[var(--text)] truncate">Drawspace</span>}
         </div>
@@ -107,41 +106,28 @@ export default function Sidebar({ active, onSelect, username, email, expanded, o
           </button>
         )}
 
-        <SectionLabel>Main</SectionLabel>
-        <nav className="flex flex-col gap-1 mb-8">
-          {NAV.map(renderItem)}
-        </nav>
-
-        <SectionLabel>Workspace</SectionLabel>
         <nav className="flex flex-col gap-1">
-          {NAV_SECONDARY.map(renderItem)}
+          {NAV.map(renderItem)}
         </nav>
       </div>
 
       {/* Footer profile */}
       <div className="p-3 border-t border-[var(--border-light)]">
         {expanded ? (
-          <div className="p-3 rounded-[16px] hover:bg-[var(--hover)] transition-colors">
-            <div className="flex items-center gap-3 mb-3">
-              <div className="w-10 h-10 rounded-full bg-[var(--accent-soft)] flex items-center justify-center text-[15px] font-semibold text-[var(--primary)] shrink-0">
-                {initial}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-[14px] font-semibold text-[var(--text)] truncate">{username}</p>
-                <p className="text-[12px] text-[var(--muted)] truncate">{email}</p>
-              </div>
+          <div className="flex items-center gap-3 p-2.5 rounded-[16px] border border-[var(--border)] bg-[var(--card)]">
+            <div className="w-9 h-9 rounded-full grad-primary flex items-center justify-center text-[14px] font-semibold text-white shrink-0">
+              {initial}
             </div>
-            <div className="flex items-center gap-2 pt-3 border-t border-[var(--border-light)]">
-              <button className="flex-1 flex items-center justify-center gap-1.5 h-8 rounded-[10px] hover:bg-[var(--card)] text-[13px] font-medium text-[var(--muted-darker)] hover:text-[var(--text)] transition-colors">
-                <Settings className="w-4 h-4" strokeWidth={1.75} /> Settings
-              </button>
-              <button onClick={onLogout} className="flex-1 flex items-center justify-center gap-1.5 h-8 rounded-[10px] hover:bg-[rgba(239,68,68,0.06)] text-[13px] font-medium text-[var(--danger)] transition-colors">
-                <LogOut className="w-4 h-4" strokeWidth={1.75} /> Logout
-              </button>
+            <div className="flex-1 min-w-0">
+              <p className="text-[14px] font-semibold text-[var(--text)] truncate">{username}</p>
+              <p className="text-[12px] text-[var(--muted)] truncate">{email}</p>
             </div>
+            <button onClick={onLogout} className="tooltip w-8 h-8 flex items-center justify-center rounded-[10px] text-[var(--muted)] hover:bg-[rgba(239,68,68,0.08)] hover:text-[var(--danger)] transition-colors shrink-0" data-tooltip="Logout">
+              <LogOut className="w-[18px] h-[18px]" strokeWidth={1.75} />
+            </button>
           </div>
         ) : (
-          <button onClick={onLogout} className="tooltip w-full h-11 flex items-center justify-center rounded-[14px] bg-[var(--accent-soft)] text-[15px] font-semibold text-[var(--primary)]" data-tooltip={username}>
+          <button onClick={onLogout} className="tooltip w-full h-11 flex items-center justify-center rounded-[14px] grad-primary text-[15px] font-semibold text-white" data-tooltip={`${username} — Logout`}>
             {initial}
           </button>
         )}

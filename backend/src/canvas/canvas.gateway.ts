@@ -23,6 +23,7 @@ function mapElementType(t: unknown): ElementType {
 interface AuthSocket extends Socket {
   userId: string;
   username: string;
+  isGuest: boolean;
 }
 
 @WebSocketGateway({
@@ -42,18 +43,26 @@ export class CanvasGateway implements OnGatewayConnection, OnGatewayDisconnect {
   ) {}
 
   async handleConnection(client: AuthSocket) {
+    const token = client.handshake.auth?.token as string;
+    if (!token) {
+      // Anonymous guest — allowed, but can only act on public boards.
+      client.userId = `guest:${client.id}`;
+      client.username = 'Guest';
+      client.isGuest = true;
+      this.logger.log(`Guest connected: ${client.userId}`);
+      return;
+    }
     try {
-      const token = client.handshake.auth?.token as string;
-      if (!token) throw new Error('No token');
-
       const payload = this.jwtService.verify<{ sub: string; email: string }>(token);
       client.userId = payload.sub;
       client.username = payload.email;
-
+      client.isGuest = false;
       this.logger.log(`Client connected: ${client.userId}`);
     } catch {
-      client.emit('error', { message: 'Unauthorized' });
-      client.disconnect();
+      // Bad token → treat as guest rather than hard-disconnecting
+      client.userId = `guest:${client.id}`;
+      client.username = 'Guest';
+      client.isGuest = true;
     }
   }
 
@@ -73,8 +82,10 @@ export class CanvasGateway implements OnGatewayConnection, OnGatewayDisconnect {
       await this.boardsService.assertAccess(payload.boardId, client.userId);
       await client.join(payload.boardId);
       client.to(payload.boardId).emit('user:joined', { userId: client.userId });
+      this.logger.log(`${client.userId} joined ${payload.boardId}`);
       return { event: 'board:joined', boardId: payload.boardId };
-    } catch {
+    } catch (err) {
+      this.logger.warn(`Join denied ${client.userId} → ${payload.boardId}: ${(err as Error).message}`);
       return { event: 'error', message: 'Access denied' };
     }
   }
@@ -102,10 +113,12 @@ export class CanvasGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
     // Persist to DB so the board reloads with its content
     try {
-      await this.boardsService.addElement(payload.boardId, client.userId, {
-        type: mapElementType(payload.element?.type),
-        data: payload.element,
-      });
+      const dto = { type: mapElementType(payload.element?.type), data: payload.element };
+      if (client.isGuest) {
+        await this.boardsService.addGuestElement(payload.boardId, dto);
+      } else {
+        await this.boardsService.addElement(payload.boardId, client.userId, dto);
+      }
     } catch (err) {
       this.logger.warn(`Persist draw failed: ${(err as Error).message}`);
     }

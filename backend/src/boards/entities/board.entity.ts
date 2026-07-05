@@ -20,6 +20,9 @@ export class Board {
   @Column({ default: false })
   isPublic: boolean;
 
+  @Column({ default: false })
+  isTrashed: boolean;
+
   @Column()
   ownerId: string;
 

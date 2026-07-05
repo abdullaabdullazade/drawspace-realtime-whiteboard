@@ -4,6 +4,7 @@ import {
 } from '@nestjs/common';
 import { BoardsService } from './boards.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { Public } from '../auth/decorators/public.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { User } from '../users/entities/user.entity';
 import { CreateBoardDto } from './dto/create-board.dto';
@@ -30,6 +31,22 @@ export class BoardsController {
     return this.boardsService.findOne(id, user.id);
   }
 
+  // Public read — no auth. Only returns the board if it is public.
+  @Public()
+  @Get(':id/public')
+  findPublic(@Param('id') id: string) {
+    return this.boardsService.findPublicBoard(id);
+  }
+
+  @Post(':id/invite')
+  invite(
+    @Param('id') id: string,
+    @CurrentUser() user: User,
+    @Body() dto: { email: string },
+  ) {
+    return this.boardsService.inviteByEmail(id, user.id, dto.email);
+  }
+
   @Patch(':id')
   updateBoard(
     @Param('id') id: string,
@@ -42,6 +59,21 @@ export class BoardsController {
   @Delete(':id')
   deleteBoard(@Param('id') id: string, @CurrentUser() user: User) {
     return this.boardsService.deleteBoard(id, user.id);
+  }
+
+  @Get('trash/list')
+  trashed(@CurrentUser() user: User) {
+    return this.boardsService.findTrashed(user.id);
+  }
+
+  @Post(':id/restore')
+  restore(@Param('id') id: string, @CurrentUser() user: User) {
+    return this.boardsService.restoreBoard(id, user.id);
+  }
+
+  @Delete(':id/permanent')
+  permanent(@Param('id') id: string, @CurrentUser() user: User) {
+    return this.boardsService.permanentDelete(id, user.id);
   }
 
   @Post(':id/members')

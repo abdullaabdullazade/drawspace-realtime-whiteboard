@@ -5,9 +5,10 @@ import { BoardMember } from './entities/board-member.entity';
 import { CanvasElement } from './entities/canvas-element.entity';
 import { BoardsService } from './boards.service';
 import { BoardsController } from './boards.controller';
+import { UsersModule } from '../users/users.module';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([Board, BoardMember, CanvasElement])],
+  imports: [TypeOrmModule.forFeature([Board, BoardMember, CanvasElement]), UsersModule],
   providers: [BoardsService],
   controllers: [BoardsController],
   exports: [BoardsService],

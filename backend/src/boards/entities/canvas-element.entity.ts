@@ -20,8 +20,8 @@ export class CanvasElement {
   @Column()
   boardId: string;
 
-  @Column()
-  createdById: string;
+  @Column({ nullable: true })
+  createdById: string | null;
 
   @Column({ type: 'enum', enum: ElementType })
   type: ElementType;
@@ -36,9 +36,9 @@ export class CanvasElement {
   @JoinColumn({ name: 'boardId' })
   board: Board;
 
-  @ManyToOne(() => User)
+  @ManyToOne(() => User, { nullable: true })
   @JoinColumn({ name: 'createdById' })
-  createdBy: User;
+  createdBy: User | null;
 
   @CreateDateColumn()
   createdAt: Date;

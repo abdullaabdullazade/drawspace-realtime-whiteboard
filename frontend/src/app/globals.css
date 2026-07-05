@@ -1,0 +1,273 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ============================================================
+   DRAWSPACE — Obsera-inspired mint / emerald design system
+   ============================================================ */
+:root {
+  /* Surfaces */
+  --bg: #F8FAF8;
+  --bg-2: #F1F5F1;
+  --card: #FFFFFF;
+  --hover: #EEF4EF;
+  --sidebar-bg: #FFFFFF;
+  --sidebar-border: #E7ECE8;
+
+  /* Borders */
+  --border: #E7ECE8;
+  --border-2: #DCE3DD;
+  --border-light: #EEF2EE;
+
+  /* Text */
+  --text: #111827;
+  --text-2: #6B7280;
+  --text-3: #9CA3AF;
+  --muted: #6B7280;
+  --muted-darker: #4B5563;
+
+  /* Accent — single green */
+  --accent: #16A34A;
+  --primary: #16A34A;
+  --primary-hover: #22C55E;
+  --primary-gradient: linear-gradient(135deg, #16A34A 0%, #22C55E 100%);
+  --accent-deep: #15803D;
+  --accent-soft: #EAF7EE;
+
+  /* Semantic */
+  --success: #22C55E;
+  --warning: #F59E0B;
+  --danger: #EF4444;
+  --info: #16A34A;
+
+  /* Radius */
+  --r-sm: 12px;
+  --r-md: 16px;
+  --r-lg: 20px;
+  --r-xl: 24px;
+
+  /* Shadows — extremely soft */
+  --shadow-sm: 0 1px 2px rgba(17,24,39,0.03), 0 4px 12px rgba(17,24,39,0.03);
+  --shadow-soft: 0 8px 30px rgba(17,24,39,0.04);
+  --shadow-md: 0 8px 30px rgba(17,24,39,0.05);
+  --shadow-hover: 0 14px 40px rgba(17,24,39,0.08);
+  --shadow-lg: 0 24px 60px rgba(17,24,39,0.10);
+  --shadow-sidebar: 0 0 1px rgba(17,24,39,0.04);
+  --shadow-primary: 0 6px 18px rgba(22,163,74,0.22);
+  --glow: 0 6px 18px rgba(22,163,74,0.22);
+}
+
+/* Dark mode ------------------------------------------------- */
+.dark {
+  --bg: #0E1512;
+  --bg-2: #121A16;
+  --card: #16201B;
+  --hover: #1D2A23;
+  --sidebar-bg: #101711;
+  --sidebar-border: rgba(255,255,255,0.07);
+
+  --border: rgba(255,255,255,0.08);
+  --border-2: rgba(255,255,255,0.12);
+  --border-light: rgba(255,255,255,0.06);
+
+  --text: #EAF2ED;
+  --text-2: #9BB0A4;
+  --text-3: #6E8177;
+  --muted: #9BB0A4;
+  --muted-darker: #B9CCC1;
+
+  --accent: #2BB673;
+  --primary: #2BB673;
+  --primary-hover: #34C57F;
+
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.3), 0 2px 8px rgba(0,0,0,0.35);
+  --shadow-soft: 0 4px 20px rgba(0,0,0,0.4);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.45);
+  --shadow-hover: 0 12px 32px rgba(0,0,0,0.55);
+  --shadow-sidebar: 0 0 40px rgba(0,0,0,0.3);
+}
+
+* {
+  font-family: 'Inter', sans-serif;
+  box-sizing: border-box;
+  letter-spacing: -0.011em;
+}
+
+html, body {
+  background: var(--bg);
+  color: var(--text);
+  transition: background 0.2s ease, color 0.2s ease;
+}
+body { overflow-x: hidden; overflow-y: auto; }
+body.board-open { overflow: hidden; }
+
+/* Typography ------------------------------------------------ */
+.h1-title { font-size: 32px; font-weight: 700; letter-spacing: -0.02em; line-height: 1.15; }
+.h2-title { font-size: 22px; font-weight: 700; letter-spacing: -0.015em; }
+.body-text { font-size: 15px; font-weight: 400; line-height: 1.6; }
+
+/* Mint hero wash */
+.hero-bg {
+  background:
+    radial-gradient(1000px circle at 50% -10%, #E7F4EC 0%, transparent 60%),
+    linear-gradient(180deg, #EEF8F2 0%, #FFFFFF 55%);
+}
+
+/* Surfaces -------------------------------------------------- */
+.surface { background: var(--bg-2); }
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-shadow: var(--shadow-sm);
+}
+.card-flat {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+}
+.card-premium {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  box-shadow: var(--shadow-soft);
+  transition: box-shadow 0.25s ease, border-color 0.25s ease, transform 0.25s ease;
+}
+.card-premium:hover {
+  box-shadow: var(--shadow-hover);
+  border-color: var(--border-2);
+}
+.card-lift { transition: transform 0.25s ease, box-shadow 0.25s ease; }
+.card-lift:hover { transform: translateY(-4px); box-shadow: var(--shadow-hover); }
+
+/* Buttons --------------------------------------------------- */
+.btn-primary {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 11px 20px;
+  background: var(--primary-gradient);
+  color: #fff;
+  border: none;
+  border-radius: 14px;
+  box-shadow: var(--shadow-primary);
+  font-size: 15px;
+  font-weight: 600;
+  transition: all 0.18s ease;
+}
+.btn-primary:hover { filter: brightness(1.05); transform: translateY(-1px); }
+.btn-primary:active { transform: translateY(0); filter: brightness(0.97); }
+
+.btn-secondary {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 11px 20px;
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border-2);
+  border-radius: 14px;
+  font-size: 15px;
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.18s ease;
+}
+.btn-secondary:hover { background: var(--hover); }
+
+.btn-white {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border-2);
+  border-radius: 14px;
+  font-weight: 600;
+  box-shadow: var(--shadow-sm);
+  transition: all 0.18s ease;
+}
+.btn-white:hover { background: var(--hover); }
+
+.btn-ghost {
+  background: transparent;
+  color: var(--text-2);
+  border-radius: var(--r-md);
+  transition: all 0.18s ease;
+}
+.btn-ghost:hover { background: var(--hover); color: var(--text); }
+
+.icon-btn {
+  display: flex; align-items: center; justify-content: center;
+  border-radius: var(--r-md);
+  color: var(--text-2);
+  transition: all 0.18s ease;
+}
+.icon-btn:hover { background: var(--hover); color: var(--text); }
+
+/* Inputs ---------------------------------------------------- */
+.input {
+  background: var(--card);
+  border: 1px solid var(--border-2);
+  border-radius: 14px;
+  color: var(--text);
+  box-shadow: var(--shadow-sm);
+  transition: all 0.18s ease;
+}
+.input::placeholder { color: var(--text-3); }
+.input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(31,164,99,0.16);
+}
+
+/* Canvas grid ----------------------------------------------- */
+.canvas-grid {
+  background-color: #FBFDFC;
+  background-image: radial-gradient(circle, #DCEAE1 1px, transparent 1px);
+  background-size: 28px 28px;
+}
+.dark .canvas-grid {
+  background-color: #0E1512;
+  background-image: radial-gradient(circle, rgba(255,255,255,0.06) 1px, transparent 1px);
+}
+
+/* Scrollbar ------------------------------------------------- */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #CFE0D6; border-radius: 999px; border: 2px solid transparent; background-clip: padding-box; }
+::-webkit-scrollbar-thumb:hover { background: #B6D0C0; background-clip: padding-box; }
+.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); background-clip: padding-box; }
+.custom-scrollbar::-webkit-scrollbar { width: 6px; }
+
+/* Tooltip --------------------------------------------------- */
+.tooltip { position: relative; }
+.tooltip::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: calc(100% + 12px);
+  top: 50%;
+  transform: translateY(-50%) scale(0.96);
+  transform-origin: left center;
+  background: var(--text);
+  color: var(--bg);
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+  padding: 5px 9px;
+  border-radius: 8px;
+  box-shadow: var(--shadow-md);
+  pointer-events: none;
+  opacity: 0;
+  transition: all 0.15s ease;
+  z-index: 9999;
+}
+.tooltip:hover::after { opacity: 1; transform: translateY(-50%) scale(1); }
+
+/* Skeleton -------------------------------------------------- */
+.skeleton {
+  background: linear-gradient(90deg, var(--hover) 25%, var(--bg-2) 50%, var(--hover) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.4s infinite;
+}
+@keyframes shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}

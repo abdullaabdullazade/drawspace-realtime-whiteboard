@@ -27,7 +27,9 @@ async function bootstrap() {
   logger.log(`Worker ${process.pid} running on port ${port}`);
 }
 
-if (cluster.isPrimary) {
+// Cluster fans out across CPU cores. Socket.IO needs a sticky-session
+// adapter to work behind multiple workers, so only cluster when NUM_WORKERS > 1.
+if (NUM_WORKERS > 1 && cluster.isPrimary) {
   logger.log(`Master ${process.pid} started — forking ${NUM_WORKERS} workers`);
 
   for (let i = 0; i < NUM_WORKERS; i++) {

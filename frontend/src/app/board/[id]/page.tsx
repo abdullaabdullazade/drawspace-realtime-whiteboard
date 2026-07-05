@@ -2,13 +2,13 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import {
-  ArrowLeft, Share2, Download, Layers, X,
+  ArrowLeft, Share2, Download, Layers, X, Mail, Copy, Check, Maximize2,
   ZoomIn, ZoomOut, Users, RotateCcw, RotateCw, CheckCircle2, Loader2, ImagePlus,
 } from 'lucide-react';
 import Canvas, { CanvasRef, DrawElement } from '@/components/Canvas';
 import Toolbar from '@/components/Toolbar';
 import CursorOverlay from '@/components/CursorOverlay';
-import { getBoard } from '@/lib/api';
+import { getBoard, getPublicBoard, inviteToBoard, Board } from '@/lib/api';
 import { getSocket } from '@/lib/socket';
 
 type Tool = 'select' | 'pencil' | 'eraser' | 'line' | 'rectangle' | 'circle' | 'text' | 'image';
@@ -29,7 +29,7 @@ export default function BoardPage() {
   const router = useRouter();
   const canvasRef = useRef<CanvasRef>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
+  const surfaceRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ mode: 'move' | 'resize'; sx: number; sy: number; ox: number; oy: number; ow: number; oh: number } | null>(null);
 
   const [tool, setTool] = useState<Tool>('pencil');
@@ -37,10 +37,19 @@ export default function BoardPage() {
   const [color, setColor] = useState('#111111');
   const [brushSize, setBrushSize] = useState<2 | 6 | 12>(6);
   const [zoom, setZoom] = useState(100);
+  const [pan, setPan] = useState({ x: 0, y: 0 }); // world coord of viewport top-left
+  const viewDirtyRef = useRef(false); // true once user pans/zooms — gate persistence
+  const viewRestoredRef = useRef(false);
   const [connected, setConnected] = useState(false);
   const [onlineUsers, setOnlineUsers] = useState<OnlineUser[]>([]);
   const [boardName, setBoardName] = useState('Loading…');
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('saved');
+  const [rxCount, setRxCount] = useState(0);
+  const [showInvite, setShowInvite] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviteMsg, setInviteMsg] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+  const [inviteLoading, setInviteLoading] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   // Lock body scroll while board open
   useEffect(() => {
@@ -48,74 +57,141 @@ export default function BoardPage() {
     return () => document.body.classList.remove('board-open');
   }, []);
 
-  // Restore last scroll position for this board
+  // Wheel: two-finger scroll = infinite pan (all directions); ctrl/⌘+wheel = zoom
   useEffect(() => {
-    const saved = localStorage.getItem(`scroll-${id}`);
-    const sc = scrollRef.current;
-    if (saved && sc) {
-      const [l, t] = saved.split(',').map(Number);
-      requestAnimationFrame(() => { sc.scrollLeft = l; sc.scrollTop = t; });
-    } else if (sc) {
-      // Default: center the big surface
-      requestAnimationFrame(() => {
-        sc.scrollLeft = (3200 - sc.clientWidth) / 2;
-        sc.scrollTop = (2000 - sc.clientHeight) / 2;
-      });
+    const sc = surfaceRef.current;
+    if (!sc) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      viewDirtyRef.current = true;
+      if (e.ctrlKey || e.metaKey) {
+        setZoom((z) => Math.min(300, Math.max(20, Math.round(z - e.deltaY * 0.5))));
+      } else {
+        setZoom((z) => {
+          const s = z / 100;
+          setPan((p) => ({ x: p.x + e.deltaX / s, y: p.y + e.deltaY / s }));
+          return z;
+        });
+      }
+    };
+    sc.addEventListener('wheel', onWheel, { passive: false });
+    return () => sc.removeEventListener('wheel', onWheel);
+  }, []);
+
+  // Restore last view (pan + zoom) — runs once, does NOT mark dirty
+  useEffect(() => {
+    const saved = localStorage.getItem(`view-${id}`);
+    if (saved) {
+      const [x, y, z] = saved.split(',').map(Number);
+      if (!Number.isNaN(x)) setPan({ x, y });
+      if (!Number.isNaN(z) && z) setZoom(z);
     }
+    viewRestoredRef.current = true;
   }, [id]);
+
+  // Persist view only after the user actually pans/zooms (never overwrite with initial 0,0)
+  useEffect(() => {
+    if (!viewRestoredRef.current || !viewDirtyRef.current) return;
+    localStorage.setItem(`view-${id}`, `${Math.round(pan.x)},${Math.round(pan.y)},${zoom}`);
+  }, [id, pan, zoom]);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    if (!token) { router.push('/login'); return; }
-    getBoard(id)
+    // Logged in → normal fetch (private or public). Guest → public-only fetch.
+    const loader: Promise<Board> = token ? getBoard(id) : getPublicBoard(id);
+    loader
       .then((b) => {
         setBoardName(b.name);
+        // DB is authoritative (has every collaborator's elements) → load it first.
         if (b.elements?.length) {
           const els = b.elements.map((e) => e.data as unknown as DrawElement);
           canvasRef.current?.loadElements(els);
+          // Always frame all content on open so collaborators share the same view
+          requestAnimationFrame(() => fitToContent());
+          return;
+        }
+        // Fallback: local snapshot (e.g. offline drawing before it synced)
+        const snap = localStorage.getItem(`snap-${id}`);
+        if (snap) {
+          try {
+            const els = JSON.parse(snap) as DrawElement[];
+            if (els.length) canvasRef.current?.loadElements(els);
+          } catch { /* ignore */ }
         }
       })
-      .catch(() => router.push('/dashboard'));
+      .catch(() => {
+        // Guest hitting a private board → send to login; logged-in error → dashboard
+        router.push(token ? '/dashboard' : '/login');
+      });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [id, router]);
 
-  // WebSocket
+  // WebSocket — connect as guest when no token (public boards)
   useEffect(() => {
     const token = localStorage.getItem('token');
-    if (!token) return;
     const socket = getSocket(token);
 
-    socket.on('connect', () => { setConnected(true); socket.emit('board:join', { boardId: id }); });
-    socket.on('disconnect', () => setConnected(false));
-    socket.on('draw', ({ element }: { userId: string; element: DrawElement }) => {
+    const join = () => { setConnected(true); socket.emit('board:join', { boardId: id }); };
+    const onDisconnect = () => setConnected(false);
+    const onDraw = ({ element }: { userId: string; element: DrawElement }) => {
       canvasRef.current?.addRemoteElement(element);
-    });
-    socket.on('user:joined', ({ userId }: { userId: string }) => {
+      setRxCount((c) => c + 1);
+    };
+    const onJoined = ({ userId }: { userId: string }) => {
       setOnlineUsers((prev) => prev.find((u) => u.id === userId) ? prev : [...prev, {
         id: userId, username: `User ${userId.slice(0, 4)}`,
         color: USER_COLORS[prev.length % USER_COLORS.length], cursor: { x: 0, y: 0 },
       }]);
-    });
-    socket.on('user:left', ({ userId }: { userId: string }) => setOnlineUsers((prev) => prev.filter((u) => u.id !== userId)));
-    socket.on('cursor:moved', ({ userId, x, y }: { userId: string; x: number; y: number }) =>
-      setOnlineUsers((prev) => prev.map((u) => u.id === userId ? { ...u, cursor: { x, y } } : u)));
+    };
+    const onLeft = ({ userId }: { userId: string }) => setOnlineUsers((prev) => prev.filter((u) => u.id !== userId));
+    const onCursor = ({ userId, x, y }: { userId: string; x: number; y: number }) =>
+      setOnlineUsers((prev) => prev.map((u) => u.id === userId ? { ...u, cursor: { x, y } } : u));
+
+    if (socket.connected) join();
+    socket.on('connect', join);
+    socket.on('disconnect', onDisconnect);
+    socket.on('connect_error', onDisconnect);
+    socket.on('draw', onDraw);
+    socket.on('user:joined', onJoined);
+    socket.on('user:left', onLeft);
+    socket.on('cursor:moved', onCursor);
 
     return () => {
-      socket.emit('board:leave', { boardId: id });
-      ['connect', 'disconnect', 'draw', 'user:joined', 'user:left', 'cursor:moved'].forEach((e) => socket.off(e));
+      // Remove only OUR handlers (named) — don't wipe the singleton's other listeners,
+      // and don't leave the room on StrictMode double-mount (would drop live sync).
+      socket.off('connect', join);
+      socket.off('disconnect', onDisconnect);
+      socket.off('connect_error', onDisconnect);
+      socket.off('draw', onDraw);
+      socket.off('user:joined', onJoined);
+      socket.off('user:left', onLeft);
+      socket.off('cursor:moved', onCursor);
     };
   }, [id]);
 
   const handleDraw = useCallback((el: DrawElement) => {
     const token = localStorage.getItem('token');
-    if (!token) return;
     setSaveStatus('saving');
     getSocket(token).emit('draw', { boardId: id, element: el });
     setTimeout(() => setSaveStatus('saved'), 800);
   }, [id]);
 
+  // Snapshot every change to localStorage so reopening restores the exact state
+  const saveSnapshot = useCallback((els: DrawElement[]) => {
+    try {
+      localStorage.setItem(`snap-${id}`, JSON.stringify(els));
+    } catch {
+      // Quota (large images) — drop image data from snapshot as fallback
+      try {
+        const light = els.filter((e) => e.type !== 'image');
+        localStorage.setItem(`snap-${id}`, JSON.stringify(light));
+      } catch { /* give up, DB still has it */ }
+    }
+  }, [id]);
+
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (!connected) return;
     const token = localStorage.getItem('token');
-    if (!token || !connected) return;
     const rect = e.currentTarget.getBoundingClientRect();
     getSocket(token).emit('cursor:move', { boardId: id, x: e.clientX - rect.left, y: e.clientY - rect.top });
   }, [id, connected]);
@@ -134,17 +210,17 @@ export default function BoardPage() {
         const cap = 520;
         let w = img.naturalWidth, h = img.naturalHeight;
         if (Math.max(w, h) > cap) { const r = cap / Math.max(w, h); w *= r; h *= r; }
-        // Place at visible viewport center (canvas coords)
-        const sc = scrollRef.current;
-        const cx = ((sc?.scrollLeft ?? 0) + (sc?.clientWidth ?? 800) / 2) / scale;
-        const cy = ((sc?.scrollTop ?? 0) + (sc?.clientHeight ?? 600) / 2) / scale;
+        // Place at visible viewport center (world coords)
+        const sc = surfaceRef.current;
+        const cx = pan.x + (sc?.clientWidth ?? 800) / 2 / scale;
+        const cy = pan.y + (sc?.clientHeight ?? 600) / 2 / scale;
         setEditImg({ src, x: cx - w / 2, y: cy - h / 2, w, h });
         setTool('select');
       };
       img.src = src;
     };
     reader.readAsDataURL(file);
-  }, [zoom]);
+  }, [zoom, pan]);
 
   const commitImage = useCallback(() => {
     if (!editImg) return;
@@ -198,10 +274,44 @@ export default function BoardPage() {
     if (file) insertImageFile(file);
   }, [insertImageFile]);
 
-  const handleZoomIn = () => setZoom((z) => Math.min(z + 10, 200));
-  const handleZoomOut = () => setZoom((z) => Math.max(z - 10, 25));
+  const fitToContent = useCallback(() => {
+    const b = canvasRef.current?.getContentBounds();
+    const sc = surfaceRef.current;
+    if (!b || !sc) return;
+    const vw = sc.clientWidth, vh = sc.clientHeight;
+    const cw = Math.max(1, b.maxX - b.minX), ch = Math.max(1, b.maxY - b.minY);
+    let z = Math.min(vw / cw, vh / ch) * 0.82 * 100;
+    z = Math.min(200, Math.max(20, Math.round(z)));
+    const s = z / 100;
+    const cx = (b.minX + b.maxX) / 2, cy = (b.minY + b.maxY) / 2;
+    viewDirtyRef.current = true;
+    setZoom(z);
+    setPan({ x: cx - (vw / s) / 2, y: cy - (vh / s) / 2 });
+  }, []);
+
+  const handleZoomIn = () => { viewDirtyRef.current = true; setZoom((z) => Math.min(z + 10, 200)); };
+  const handleZoomOut = () => { viewDirtyRef.current = true; setZoom((z) => Math.max(z - 10, 25)); };
   const handleExport = () => canvasRef.current?.exportPNG();
-  const handleShare = () => navigator.clipboard.writeText(window.location.href);
+  const handleCopyLink = () => {
+    navigator.clipboard.writeText(window.location.href);
+    setLinkCopied(true);
+    setTimeout(() => setLinkCopied(false), 1800);
+  };
+  const handleInvite = async () => {
+    const email = inviteEmail.trim();
+    if (!email) return;
+    setInviteLoading(true);
+    setInviteMsg(null);
+    try {
+      const res = await inviteToBoard(id, email);
+      setInviteMsg({ type: 'ok', text: res.message });
+      setInviteEmail('');
+    } catch (err: unknown) {
+      setInviteMsg({ type: 'err', text: err instanceof Error ? err.message : 'Invite failed' });
+    } finally {
+      setInviteLoading(false);
+    }
+  };
 
   return (
     <div className="fixed inset-0 bg-[var(--bg)] flex flex-col overflow-hidden">
@@ -212,7 +322,7 @@ export default function BoardPage() {
         </button>
         <div className="h-6 w-px bg-[var(--border)]" />
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="w-8 h-8 rounded-[10px] bg-[var(--primary-gradient)] flex items-center justify-center shrink-0">
+          <div className="w-8 h-8 rounded-[10px] grad-primary flex items-center justify-center shrink-0">
             <Layers className="w-4 h-4 text-white" strokeWidth={2} />
           </div>
           <div className="min-w-0">
@@ -239,6 +349,8 @@ export default function BoardPage() {
             <Users className="w-3.5 h-3.5" strokeWidth={2} />{onlineUsers.length + 1}
           </span>
           <span className="w-px h-3.5 bg-[var(--border-2)]" />
+          <span className="text-[var(--muted)]" title="Remote draws received">rx {rxCount}</span>
+          <span className="w-px h-3.5 bg-[var(--border-2)]" />
           <span className={`flex items-center gap-1.5 ${saveStatus === 'saved' ? 'text-[var(--primary)]' : 'text-[var(--warning)]'}`}>
             {saveStatus === 'saved' ? <><CheckCircle2 className="w-3.5 h-3.5" strokeWidth={2.25} /> Saved</> : <><Loader2 className="w-3.5 h-3.5 animate-spin" strokeWidth={2.25} /> Saving</>}
           </span>
@@ -254,7 +366,7 @@ export default function BoardPage() {
         <button onClick={() => fileInputRef.current?.click()} className="btn-secondary flex items-center gap-2 px-3.5 py-2 text-[13px] font-medium">
           <ImagePlus className="w-4 h-4" strokeWidth={1.75} /> Image
         </button>
-        <button onClick={handleShare} className="btn-secondary flex items-center gap-2 px-3.5 py-2 text-[13px] font-medium">
+        <button onClick={() => { setShowInvite(true); setInviteMsg(null); }} className="btn-secondary flex items-center gap-2 px-3.5 py-2 text-[13px] font-medium">
           <Share2 className="w-4 h-4" strokeWidth={1.75} /> Share
         </button>
         <button onClick={handleExport} className="btn-primary flex items-center gap-2 px-4 py-2 text-[13px] font-semibold">
@@ -281,27 +393,26 @@ export default function BoardPage() {
         />
 
         <div
-          ref={scrollRef}
-          className="flex-1 relative overflow-auto ml-[76px]"
+          ref={surfaceRef}
+          className="flex-1 relative overflow-hidden ml-[76px]"
+          style={{ backgroundColor: '#FBFDFC', backgroundImage: `radial-gradient(circle, #DCEAE1 1px, transparent 1px)`, backgroundSize: `${28 * (zoom / 100)}px ${28 * (zoom / 100)}px`, backgroundPosition: `${-pan.x * (zoom / 100)}px ${-pan.y * (zoom / 100)}px` }}
           onMouseMove={(e) => { handleMouseMove(e); onOverlayMove(e); }}
           onMouseUp={endDrag}
           onMouseLeave={endDrag}
-          onScroll={(e) => localStorage.setItem(`scroll-${id}`, `${e.currentTarget.scrollLeft},${e.currentTarget.scrollTop}`)}
           onDrop={onDrop}
           onDragOver={(e) => e.preventDefault()}
         >
-          {/* Large scrollable canvas surface */}
-          <div className="canvas-grid relative" style={{ width: 3200, height: 2000 }}>
-            <Canvas ref={canvasRef} tool={tool} color={color} brushSize={brushSize} onDraw={handleDraw} zoom={zoom} />
+          <div className="absolute inset-0">
+            <Canvas ref={canvasRef} tool={tool} color={color} brushSize={brushSize} onDraw={handleDraw} onChange={saveSnapshot} onSelectAll={() => setTool('select')} zoom={zoom} panX={pan.x} panY={pan.y} onPan={(dx, dy) => { viewDirtyRef.current = true; setPan((p) => ({ x: p.x + dx, y: p.y + dy })); }} />
             <CursorOverlay users={onlineUsers} />
 
-            {/* Editable image overlay */}
+            {/* Editable image overlay (world → screen) */}
             {editImg && (
               <div
                 className="absolute z-20 group/img"
                 style={{
-                  left: editImg.x * (zoom / 100),
-                  top: editImg.y * (zoom / 100),
+                  left: (editImg.x - pan.x) * (zoom / 100),
+                  top: (editImg.y - pan.y) * (zoom / 100),
                   width: editImg.w * (zoom / 100),
                   height: editImg.h * (zoom / 100),
                 }}
@@ -320,9 +431,11 @@ export default function BoardPage() {
                   className="absolute -right-2 -bottom-2 w-4 h-4 rounded-full bg-white border-2 border-[var(--primary)] cursor-nwse-resize shadow"
                 />
                 {/* Toolbar */}
-                <div className="absolute -top-11 left-1/2 -translate-x-1/2 flex items-center gap-1 bg-[var(--card)] border border-[var(--border)] rounded-full px-1.5 py-1 shadow-[var(--shadow-md)]">
-                  <button onClick={commitImage} className="btn-primary text-[12px] px-3 py-1 rounded-full">Done</button>
-                  <button onClick={() => setEditImg(null)} className="icon-btn w-7 h-7 rounded-full"><X className="w-4 h-4" strokeWidth={2} /></button>
+                <div className="absolute -top-12 left-1/2 -translate-x-1/2 flex items-center gap-1.5 bg-[var(--card)] border border-[var(--border)] rounded-full p-1 shadow-[var(--shadow-md)]">
+                  <button onClick={commitImage} className="grad-primary text-white text-[13px] font-semibold px-4 h-8 rounded-full flex items-center gap-1.5 hover:brightness-105 transition">
+                    <Check className="w-4 h-4" strokeWidth={2.5} /> Done
+                  </button>
+                  <button onClick={() => setEditImg(null)} className="w-8 h-8 flex items-center justify-center rounded-full text-[var(--muted)] hover:bg-[var(--bg)] hover:text-[var(--text)] transition"><X className="w-4 h-4" strokeWidth={2} /></button>
                 </div>
               </div>
             )}
@@ -347,7 +460,62 @@ export default function BoardPage() {
         <button onClick={handleZoomOut} className="icon-btn w-8 h-8 rounded-xl"><ZoomOut className="w-4 h-4" strokeWidth={1.75} /></button>
         <span className="text-xs text-[var(--muted)] font-medium px-1 min-w-[3rem] text-center">{zoom}%</span>
         <button onClick={handleZoomIn} className="icon-btn w-8 h-8 rounded-xl"><ZoomIn className="w-4 h-4" strokeWidth={1.75} /></button>
+        <div className="w-px h-4 bg-[var(--border)] mx-0.5" />
+        <button onClick={fitToContent} className="icon-btn w-8 h-8 rounded-xl" title="Fit to content"><Maximize2 className="w-4 h-4" strokeWidth={1.75} /></button>
       </div>
+
+      {/* Invite / Share modal */}
+      {showInvite && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/20 backdrop-blur-sm" onClick={() => setShowInvite(false)} />
+          <div className="relative w-full max-w-[440px] bg-[var(--card)] rounded-[24px] border border-[var(--border)] shadow-[var(--shadow-lg)] overflow-hidden">
+            <div className="flex items-center justify-between px-7 py-5 border-b border-[var(--border-light)]">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-[11px] grad-primary flex items-center justify-center"><Share2 className="w-[18px] h-[18px] text-white" strokeWidth={2} /></div>
+                <h2 className="text-[18px] font-semibold text-[var(--text)]">Share board</h2>
+              </div>
+              <button onClick={() => setShowInvite(false)} className="w-8 h-8 flex items-center justify-center rounded-full hover:bg-[var(--bg)] text-[var(--muted)] hover:text-[var(--text)] transition-colors"><X className="w-5 h-5" strokeWidth={2} /></button>
+            </div>
+
+            <div className="p-7 space-y-5">
+              {/* Invite by email */}
+              <div>
+                <label className="block text-[14px] font-semibold text-[var(--text)] mb-2">Invite by email</label>
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Mail className="absolute left-3.5 top-1/2 -translate-y-1/2 w-[18px] h-[18px] text-[var(--muted)]" strokeWidth={1.75} />
+                    <input
+                      type="email"
+                      value={inviteEmail}
+                      onChange={(e) => setInviteEmail(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') handleInvite(); }}
+                      placeholder="teammate@email.com"
+                      className="input w-full pl-11 pr-3 py-3 text-[15px]"
+                    />
+                  </div>
+                  <button onClick={handleInvite} disabled={inviteLoading || !inviteEmail.trim()} className="btn-primary px-5 text-[14px] disabled:opacity-50">
+                    {inviteLoading ? <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" /> : 'Invite'}
+                  </button>
+                </div>
+                {inviteMsg && (
+                  <p className={`text-[13px] mt-2 font-medium ${inviteMsg.type === 'ok' ? 'text-[var(--primary)]' : 'text-[var(--danger)]'}`}>{inviteMsg.text}</p>
+                )}
+              </div>
+
+              {/* Copy link */}
+              <div>
+                <label className="block text-[14px] font-semibold text-[var(--text)] mb-2">Or share a link</label>
+                <button onClick={handleCopyLink} className="w-full flex items-center justify-between gap-3 px-4 py-3 rounded-[14px] border border-[var(--border)] bg-[var(--bg)] hover:border-[var(--primary)] transition-colors">
+                  <span className="text-[14px] text-[var(--muted)] truncate">{typeof window !== 'undefined' ? window.location.href : ''}</span>
+                  <span className={`flex items-center gap-1.5 text-[13px] font-semibold shrink-0 ${linkCopied ? 'text-[var(--primary)]' : 'text-[var(--muted-darker)]'}`}>
+                    {linkCopied ? <><Check className="w-4 h-4" strokeWidth={2.5} /> Copied</> : <><Copy className="w-4 h-4" strokeWidth={2} /> Copy</>}
+                  </span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

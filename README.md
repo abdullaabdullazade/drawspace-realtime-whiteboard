@@ -1,45 +1,53 @@
-# Drawspace — Real-time Collaborative Whiteboard
+# 🎨 Drawspace — Real-time Collaborative Whiteboard
 
-A full-stack, real-time collaborative whiteboard (think Figma / Miro) built with **NestJS**, **PostgreSQL**, **WebSockets**, **RabbitMQ** and a premium **Next.js 15** frontend.
+A full-stack, real-time collaborative whiteboard (think **Figma / Miro / Excalidraw**) — draw together live, share a link, and anyone can join and edit **without signing in**.
 
-Multiple users draw on the same canvas simultaneously — strokes, shapes, text and images sync live across every connected client and persist to the database.
+Built with **NestJS · PostgreSQL · WebSockets · RabbitMQ** and a premium **Next.js 15** frontend.
+
+<p align="center">
+  <img src="docs/demo.gif" alt="Two browsers collaborating live on the same board" width="100%">
+</p>
+
+> **Left:** a logged-in user. **Right:** a guest who opened the shared link with **no account**. Both draw on the same infinite canvas and see each other live — cursors, strokes and images sync in real time.
 
 ---
 
 ## ✨ Features
 
-- **Real-time collaboration** — draw together live over WebSockets (Socket.IO)
-- **JWT authentication** — register / login, protected routes, `bcrypt` hashing
-- **Role-based access control** — board owner / editor / viewer
-- **Rich canvas** — pencil, eraser, line, rectangle, circle, text and image tools
-- **Image support** — paste / drop / upload, drag to move and resize, high-quality rendering
-- **Persistence** — every element saved to PostgreSQL and reloaded on open
-- **Async pipeline** — RabbitMQ queue decouples heavy writes from the socket path
-- **Cluster mode** — multi-core scaling with Node.js `cluster`
-- **Presence** — live cursors and online-user avatars
-- **Premium SaaS UI** — Obsera-inspired design system, light theme, Framer Motion
+- 🔴 **Real-time collaboration** — strokes, shapes, text and images sync live over WebSockets; presence cursors show who's where
+- 🔗 **Public share links** — make a board public and anyone can open + edit it **without logging in** (anonymous guests)
+- 🔐 **JWT auth** — register / login, `bcrypt` hashing, protected routes, role-based access (owner / editor / viewer)
+- 🖊️ **Rich canvas** — pencil, eraser, line, rectangle, circle, text and image tools
+- 🖼️ **Images** — paste / drop / upload, then move and resize from **any side or corner**
+- 🔲 **Selection** — marquee-select, `Ctrl/⌘+A` select all, drag to move, 8-handle resize, `Delete` to remove
+- ♾️ **Infinite canvas** — pan in every direction (two-finger scroll / drag), pinch or `⌘+scroll` to zoom, **Fit to content**
+- 💾 **Persistence** — every element saved to PostgreSQL and reloaded on open; view state (pan/zoom) remembered per board
+- 📨 **Invites** — invite collaborators by email; boards track their members
+- 🗑️ **Trash** — soft-delete to trash, restore or delete forever
+- ⭐ **Favorites** — star boards for quick access
+- ⚙️ **Cluster mode & async pipeline** — Node.js `cluster` for multi-core scaling; RabbitMQ available for decoupled writes
+- 🎨 **Premium SaaS UI** — Obsera-inspired emerald design system, collapsible sidebar, Framer Motion, Lucide icons
 
 ---
 
 ## 🏗️ Architecture
 
 ```
-Next.js (3001)
-   │  REST (auth, boards, elements)
-   │  WebSocket (draw, cursor, presence)
-   ▼
-NestJS (3000)
-   ├── AuthModule      JWT · Passport · bcrypt
-   ├── UsersModule     TypeORM user repo
-   ├── BoardsModule    boards · members · canvas elements (RBAC)
-   ├── CanvasModule    WebSocket gateway (real-time)
-   └── RabbitMQModule  async persist queue
-        │
-   PostgreSQL (data)   RabbitMQ (queue)
+ Next.js 15 (:3001)
+    │  REST  → auth, boards, elements, invites, trash
+    │  WS    → draw, cursor, presence  (guests allowed on public boards)
+    ▼
+ NestJS (:3000)
+    ├── AuthModule      JWT · Passport · bcrypt · @Public() guard bypass
+    ├── UsersModule     TypeORM user repository
+    ├── BoardsModule    boards · members (RBAC) · canvas elements · trash · invite
+    ├── CanvasModule    Socket.IO gateway — real-time draw + DB persistence
+    └── RabbitMQModule  async persist queue (graceful fallback)
+         │
+    PostgreSQL              RabbitMQ
 ```
 
-**Request flow:** client → JWT guard → controller → service → TypeORM → PostgreSQL.
-**Draw flow:** client `emit('draw')` → gateway broadcasts to room + persists element to DB.
+**Draw flow:** client `emit('draw')` → gateway broadcasts to the board room **and** persists the element to PostgreSQL → every other client (including anonymous guests) renders it instantly and gets it on reload.
 
 ---
 
@@ -52,18 +60,17 @@ NestJS (3000)
 | Real-time | Socket.IO WebSocket gateway |
 | Queue | RabbitMQ (amqplib) |
 | Auth | JWT, Passport, bcrypt |
-| Frontend | Next.js 15 (App Router), React 19 |
+| Frontend | Next.js 15 (App Router, Turbopack), React 19 |
 | Styling | Tailwind CSS, Framer Motion, Lucide |
+| E2E demo | Playwright + FFmpeg |
 
 ---
 
 ## 🚀 Getting Started
 
-### Prerequisites
-- Node.js 20+
-- Docker (for PostgreSQL + RabbitMQ)
+**Prerequisites:** Node.js 20+, Docker.
 
-### 1. Infrastructure
+### 1. Infrastructure (PostgreSQL + RabbitMQ)
 ```bash
 docker run -d --name whiteboard-postgres -e POSTGRES_USER=postgres \
   -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=whiteboard -p 5432:5432 postgres:16-alpine
@@ -83,10 +90,17 @@ npm run start:dev        # http://localhost:3000
 ```bash
 cd frontend
 npm install
-npm run dev              # http://localhost:3001
+npm run dev              # http://localhost:3001  (Turbopack)
 ```
 
-Open http://localhost:3001, register an account, create a board and start drawing.
+Open http://localhost:3001, register, create a board and start drawing.
+Make a board **Public**, hit **Share**, and open the link in another browser (or incognito) — no login needed.
+
+---
+
+## 🎬 The demo video
+
+The clip at the top is generated end-to-end with **Playwright**: it registers a user, creates a public board, draws, adds an image, then opens the shared link in a second (guest) browser and draws — with both browser recordings stitched side-by-side by FFmpeg. Source: [`frontend/scripts/demo.mjs`](frontend/scripts/demo.mjs) (in the app repo). Full-quality MP4: [`docs/demo.mp4`](docs/demo.mp4).
 
 ---
 
@@ -94,19 +108,11 @@ Open http://localhost:3001, register an account, create a board and start drawin
 
 ```
 drawspace/
-├── backend/     NestJS API + WebSocket gateway
-│   └── src/
-│       ├── auth/        auth, JWT strategy, guards
-│       ├── users/       user entity + service
-│       ├── boards/      boards, members, canvas elements
-│       ├── canvas/      WebSocket gateway
-│       └── rabbitmq/    message queue
-└── frontend/    Next.js 15 dashboard + whiteboard editor
-    └── src/
-        ├── app/         routes (login, register, dashboard, board)
-        ├── components/  Sidebar, BoardCard, Canvas, Toolbar…
-        ├── hooks/       useAuth
-        └── lib/         api client, socket client
+├── backend/     NestJS API + Socket.IO gateway
+│   └── src/{auth, users, boards, canvas, rabbitmq, common}
+├── frontend/    Next.js 15 dashboard + whiteboard editor
+│   └── src/{app, components, hooks, lib}
+└── docs/        demo.gif · demo.mp4
 ```
 
 ---
@@ -115,15 +121,17 @@ drawspace/
 
 | Method | Endpoint | Description |
 |---|---|---|
-| POST | `/api/auth/register` | Create account, returns JWT |
-| POST | `/api/auth/login` | Login, returns JWT |
-| GET | `/api/boards` | List my boards |
+| POST | `/api/auth/register` · `/login` | Auth, returns JWT |
+| GET | `/api/boards` | My boards |
 | POST | `/api/boards` | Create board |
-| GET | `/api/boards/:id` | Board with elements |
-| PATCH | `/api/boards/:id` | Rename / update board |
-| DELETE | `/api/boards/:id` | Delete board |
+| GET | `/api/boards/:id` | Board with elements (auth) |
+| GET | `/api/boards/:id/public` | Board with elements (**no auth**, public only) |
+| PATCH | `/api/boards/:id` | Rename / update |
+| POST | `/api/boards/:id/invite` | Invite by email |
+| DELETE | `/api/boards/:id` | Move to trash |
+| POST | `/api/boards/:id/restore` | Restore from trash |
 
-**WebSocket** (`/canvas`): `board:join`, `draw`, `cursor:move`, `element:*`.
+**WebSocket** (`/canvas`): `board:join`, `draw`, `cursor:move`, `board:leave` — authenticated users and anonymous guests (on public boards).
 
 ---
 

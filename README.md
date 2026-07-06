@@ -32,22 +32,40 @@ Built with **NestJS · PostgreSQL · WebSockets · RabbitMQ** and a premium **Ne
 
 ## 🏗️ Architecture
 
-```
- Next.js 15 (:3001)
-    │  REST  → auth, boards, elements, invites, trash
-    │  WS    → draw, cursor, presence  (guests allowed on public boards)
-    ▼
- NestJS (:3000)
-    ├── AuthModule      JWT · Passport · bcrypt · @Public() guard bypass
-    ├── UsersModule     TypeORM user repository
-    ├── BoardsModule    boards · members (RBAC) · canvas elements · trash · invite
-    ├── CanvasModule    Socket.IO gateway — real-time draw + DB persistence
-    └── RabbitMQModule  async persist queue (graceful fallback)
-         │
-    PostgreSQL              RabbitMQ
+```mermaid
+flowchart TB
+    subgraph Client["Browser clients"]
+        U1["Logged-in user<br/>JWT"]
+        U2["Guest<br/>shared link, no login"]
+    end
+
+    subgraph FE["Next.js 15 · :3001"]
+        UI["Dashboard + Whiteboard<br/>Canvas · pan/zoom · tools"]
+    end
+
+    subgraph BE["NestJS · :3000"]
+        REST["REST API<br/>auth · boards · elements · invites · trash"]
+        WS["Socket.IO Gateway /canvas<br/>draw · draw:progress · cursor · presence"]
+        PROD["RabbitMQ producer"]
+    end
+
+    PG[("PostgreSQL<br/>users · boards · members · elements")]
+    MQ{{"RabbitMQ<br/>canvas.persist queue"}}
+
+    U1 --> UI
+    U2 --> UI
+    UI -->|REST / HTTPS| REST
+    UI <-->|WebSocket| WS
+    REST --> PG
+    WS -->|persist final stroke| PG
+    WS --> PROD
+    PROD -.->|publish| MQ
+    MQ -.->|async persist| PG
 ```
 
-**Draw flow:** client `emit('draw')` → gateway broadcasts to the board room **and** persists the element to PostgreSQL → every other client (including anonymous guests) renders it instantly and gets it on reload.
+**Modules:** `AuthModule` (JWT · Passport · bcrypt · `@Public()` guard bypass) · `UsersModule` · `BoardsModule` (boards · members RBAC · elements · trash · invite) · `CanvasModule` (Socket.IO gateway) · `RabbitMQModule` (async persist queue, graceful fallback).
+
+**Draw flow:** while drawing, the client streams `draw:progress` (broadcast-only, no DB) so others render the stroke **point-by-point**; on stroke end it `emit('draw')` → gateway broadcasts to the room **and** persists to PostgreSQL → every other client (including anonymous guests) has it on reload.
 
 ---
 
@@ -62,35 +80,45 @@ Built with **NestJS · PostgreSQL · WebSockets · RabbitMQ** and a premium **Ne
 | Auth | JWT, Passport, bcrypt |
 | Frontend | Next.js 15 (App Router, Turbopack), React 19 |
 | Styling | Tailwind CSS, Framer Motion, Lucide |
-| E2E demo | Playwright + FFmpeg |
+| Infra | Docker + Docker Compose |
 
 ---
 
 ## 🚀 Getting Started
 
-**Prerequisites:** Node.js 20+, Docker.
+### Option A — Docker Compose (everything, one command)
 
-### 1. Infrastructure (PostgreSQL + RabbitMQ)
+**Prerequisites:** Docker + Docker Compose.
+
 ```bash
-docker run -d --name whiteboard-postgres -e POSTGRES_USER=postgres \
-  -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=whiteboard -p 5432:5432 postgres:16-alpine
-
-docker run -d --name whiteboard-rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:3-management-alpine
+cp .env.example .env        # optional — sane defaults already baked in
+docker compose up --build
 ```
 
-### 2. Backend
-```bash
-cd backend
-cp .env.example .env
-npm install
-npm run start:dev        # http://localhost:3000
-```
+This builds and starts **all four services** wired together:
 
-### 3. Frontend
+| Service | URL |
+|---|---|
+| Frontend (Next.js) | http://localhost:3001 |
+| Backend (NestJS API + WS) | http://localhost:3000 |
+| PostgreSQL | `localhost:5432` |
+| RabbitMQ management UI | http://localhost:15672 (`guest` / `guest`) |
+
+The backend waits for Postgres **and** RabbitMQ health checks before booting.
+
+### Option B — Local dev (hot reload)
+
+**Prerequisites:** Node.js 20+, Docker (for infra only).
+
 ```bash
-cd frontend
-npm install
-npm run dev              # http://localhost:3001  (Turbopack)
+# 1. Infra
+docker compose up -d postgres rabbitmq
+
+# 2. Backend
+cd backend && cp .env.example .env && npm install && npm run start:dev   # :3000
+
+# 3. Frontend
+cd frontend && npm install && npm run dev                                # :3001 (Turbopack)
 ```
 
 Open http://localhost:3001, register, create a board and start drawing.
@@ -98,21 +126,19 @@ Make a board **Public**, hit **Share**, and open the link in another browser (or
 
 ---
 
-## 🎬 The demo video
-
-The clip at the top is generated end-to-end with **Playwright**: it registers a user, creates a public board, draws, adds an image, then opens the shared link in a second (guest) browser and draws — with both browser recordings stitched side-by-side by FFmpeg. Source: [`frontend/scripts/demo.mjs`](frontend/scripts/demo.mjs) (in the app repo). Full-quality MP4: [`docs/demo.mp4`](docs/demo.mp4).
-
----
-
 ## 📁 Structure
 
 ```
 drawspace/
-├── backend/     NestJS API + Socket.IO gateway
+├── docker-compose.yml   Postgres · RabbitMQ · backend · frontend
+├── .env.example         compose overrides
+├── backend/             NestJS API + Socket.IO gateway
+│   ├── Dockerfile
 │   └── src/{auth, users, boards, canvas, rabbitmq, common}
-├── frontend/    Next.js 15 dashboard + whiteboard editor
+├── frontend/            Next.js 15 dashboard + whiteboard editor
+│   ├── Dockerfile
 │   └── src/{app, components, hooks, lib}
-└── docs/        demo.gif · demo.mp4
+└── docs/                demo.gif · demo.mp4
 ```
 
 ---

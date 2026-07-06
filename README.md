@@ -126,41 +126,6 @@ Make a board **Public**, hit **Share**, and open the link in another browser (or
 
 ---
 
-## Structure
-
-```
-drawspace/
-├── docker-compose.yml   Postgres · RabbitMQ · backend · frontend
-├── .env.example         compose overrides
-├── backend/             NestJS API + Socket.IO gateway
-│   ├── Dockerfile
-│   └── src/{auth, users, boards, canvas, rabbitmq, common}
-├── frontend/            Next.js 15 dashboard + whiteboard editor
-│   ├── Dockerfile
-│   └── src/{app, components, hooks, lib}
-└── docs/                demo.gif · demo.mp4
-```
-
----
-
-## API (selected)
-
-| Method | Endpoint | Description |
-|---|---|---|
-| POST | `/api/auth/register` · `/login` | Auth, returns JWT |
-| GET | `/api/boards` | My boards |
-| POST | `/api/boards` | Create board |
-| GET | `/api/boards/:id` | Board with elements (auth) |
-| GET | `/api/boards/:id/public` | Board with elements (**no auth**, public only) |
-| PATCH | `/api/boards/:id` | Rename / update |
-| POST | `/api/boards/:id/invite` | Invite by email |
-| DELETE | `/api/boards/:id` | Move to trash |
-| POST | `/api/boards/:id/restore` | Restore from trash |
-
-**WebSocket** (`/canvas`): `board:join`, `draw`, `cursor:move`, `board:leave` — authenticated users and anonymous guests (on public boards).
-
----
-
 ## License
 
-UNLICENSED — personal portfolio project.
+Released under the [MIT License](LICENSE).

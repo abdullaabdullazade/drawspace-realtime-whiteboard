@@ -98,17 +98,28 @@ const pathA = await vA.path();
 const pathB = await vB.path();
 await browser.close();
 
-// Side-by-side, aligned in real time, crisp, with clean labels
+// Realistic side-by-side: wrap each panel in a browser chrome bar (traffic lights + URL)
+// so it reads like two real browser windows opening the same link. Then speed up 1.25x.
+const short = (boardURL.split('/board/')[1] || '').slice(0, 8);
+const chrome = (urlText) =>
+  `drawbox=x=0:y=0:w=iw:h=64:color=0xE8EAED:t=fill,` +
+  `drawbox=x=22:y=25:w=14:h=14:color=0xFF5F57:t=fill,` +
+  `drawbox=x=46:y=25:w=14:h=14:color=0xFEBC2E:t=fill,` +
+  `drawbox=x=70:y=25:w=14:h=14:color=0x28C840:t=fill,` +
+  `drawbox=x=108:y=15:w=iw-130:h=36:color=white:t=fill,` +
+  `drawtext=text='${urlText}':x=128:y=25:fontsize=20:fontcolor=0x3C4043`;
+const userUrl = `localhost\\:3001/board/${short}    (you - signed in)`;
+const guestUrl = `localhost\\:3001/board/${short}    (guest - shared link, no login)`;
 execSync(
   `ffmpeg -y -i "${pathA}" -i "${pathB}" -filter_complex ` +
-  `"[0:v]drawbox=x=0:y=0:w=iw:h=46:color=0x16A34A:t=fill,drawtext=text='User — logged in':x=24:y=10:fontsize=24:fontcolor=white[a];` +
-  `[1:v]tpad=start_duration=${offset}:start_mode=add:color=0xF4FAF6,` +
-  `drawbox=x=0:y=0:w=iw:h=46:color=0x0EA5E9:t=fill,drawtext=text='Guest — shared link, no login':x=24:y=10:fontsize=24:fontcolor=white[b];` +
-  `[a][b]hstack=inputs=2" -c:v libx264 -crf 16 -preset veryslow -pix_fmt yuv420p -movflags +faststart ${OUT}/demo.mp4 -loglevel error`
+  `"[0:v]${chrome(userUrl)}[a];` +
+  `[1:v]tpad=start_duration=${offset}:start_mode=add:color=0xF4FAF6,${chrome(guestUrl)}[b];` +
+  `[a][b]hstack=inputs=2,setpts=PTS/1.25[v]" ` +
+  `-map "[v]" -c:v libx264 -crf 16 -preset veryslow -pix_fmt yuv420p -movflags +faststart ${OUT}/demo.mp4 -loglevel error`
 );
 // High-quality gif (full-stats palette) of the live-collaboration highlight
-execSync(`ffmpeg -y -ss 22 -t 24 -i ${OUT}/demo.mp4 -vf "fps=16,scale=1200:-1:flags=lanczos,palettegen=stats_mode=full" ${OUT}/pal.png -loglevel error`);
-execSync(`ffmpeg -y -ss 22 -t 24 -i ${OUT}/demo.mp4 -i ${OUT}/pal.png -lavfi "fps=16,scale=1200:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=floyd_steinberg" ${OUT}/demo.gif -loglevel error`);
+execSync(`ffmpeg -y -ss 18 -t 22 -i ${OUT}/demo.mp4 -vf "fps=18,scale=1200:-1:flags=lanczos,palettegen=stats_mode=full" ${OUT}/pal.png -loglevel error`);
+execSync(`ffmpeg -y -ss 18 -t 22 -i ${OUT}/demo.mp4 -i ${OUT}/pal.png -lavfi "fps=18,scale=1200:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=floyd_steinberg" ${OUT}/demo.gif -loglevel error`);
 
 console.log('DONE');
 console.log('offset(s):', offset);

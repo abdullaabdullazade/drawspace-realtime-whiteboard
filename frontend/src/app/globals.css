@@ -114,6 +114,10 @@ body.board-open { overflow: hidden; }
     linear-gradient(180deg, #EEF8F2 0%, #FFFFFF 55%);
 }
 
+/* Brand gradient fill — bg-[var(--primary-gradient)] fails (becomes an
+   invalid background-color). Use this utility for gradient backgrounds. */
+.grad-primary { background: var(--primary-gradient); }
+
 /* Surfaces -------------------------------------------------- */
 .surface { background: var(--bg-2); }
 .card {

@@ -5,8 +5,9 @@ const SOCKET_URL = 'http://localhost:3000/canvas';
 let socket: Socket | null = null;
 let currentToken: string | null = null;
 
-export function getSocket(token: string): Socket {
-  if (socket && socket.connected && currentToken === token) {
+export function getSocket(token?: string | null): Socket {
+  const key = token ?? '';
+  if (socket && socket.connected && currentToken === key) {
     return socket;
   }
 
@@ -15,14 +16,18 @@ export function getSocket(token: string): Socket {
     socket = null;
   }
 
-  currentToken = token;
+  currentToken = key;
 
   socket = io(SOCKET_URL, {
-    auth: { token },
-    transports: ['websocket', 'polling'],
+    // No token → connect as anonymous guest (public boards only)
+    auth: token ? { token } : {},
+    // Polling only — reliable everywhere (some browsers/proxies block ws://).
+    // Real-time still works over long-polling; avoids the ws upgrade failure.
+    transports: ['polling'],
+    upgrade: false,
     reconnection: true,
-    reconnectionAttempts: 5,
-    reconnectionDelay: 1000,
+    reconnectionAttempts: 20,
+    reconnectionDelay: 800,
   });
 
   socket.on('connect', () => {

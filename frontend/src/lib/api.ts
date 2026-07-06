@@ -31,7 +31,17 @@ async function request<T>(
     let errorMessage = `HTTP error ${response.status}`;
     try {
       const errorData = await response.json();
-      errorMessage = errorData.message || errorData.error || errorMessage;
+      // Message can be nested (global exception filter wraps it under `error`).
+      const pick = (v: unknown): string | undefined => {
+        if (typeof v === 'string') return v;
+        if (Array.isArray(v)) return v.join(', ');
+        if (v && typeof v === 'object') {
+          const o = v as Record<string, unknown>;
+          return pick(o.message) ?? pick(o.error);
+        }
+        return undefined;
+      };
+      errorMessage = pick(errorData.message) ?? pick(errorData.error) ?? errorMessage;
     } catch {
       // ignore JSON parse errors on error responses
     }
@@ -133,6 +143,11 @@ export async function getBoard(id: string): Promise<Board> {
   return request<Board>(`/boards/${id}`);
 }
 
+// Public board — no auth required (only works if the board is public)
+export async function getPublicBoard(id: string): Promise<Board> {
+  return request<Board>(`/boards/${id}/public`, {}, false);
+}
+
 export async function deleteBoard(id: string): Promise<void> {
   return request<void>(`/boards/${id}`, {
     method: 'DELETE',
@@ -147,6 +162,28 @@ export async function updateBoard(
     method: 'PATCH',
     body: JSON.stringify(dto),
   });
+}
+
+export async function inviteToBoard(
+  boardId: string,
+  email: string,
+): Promise<{ message: string; alreadyMember?: boolean }> {
+  return request(`/boards/${boardId}/invite`, {
+    method: 'POST',
+    body: JSON.stringify({ email }),
+  });
+}
+
+export async function getTrashedBoards(): Promise<Board[]> {
+  return request<Board[]>('/boards/trash/list');
+}
+
+export async function restoreBoard(id: string): Promise<void> {
+  return request<void>(`/boards/${id}/restore`, { method: 'POST' });
+}
+
+export async function permanentDeleteBoard(id: string): Promise<void> {
+  return request<void>(`/boards/${id}/permanent`, { method: 'DELETE' });
 }
 
 export async function createElement(

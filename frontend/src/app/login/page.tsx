@@ -32,7 +32,7 @@ export default function LoginPage() {
     <div className="min-h-screen flex items-center justify-center p-4">
       
       <div className="absolute top-10 left-10 flex items-center gap-3 z-20">
-        <div className="w-10 h-10 rounded-[12px] bg-[var(--primary-gradient)] flex items-center justify-center shadow-[var(--shadow-primary)]">
+        <div className="w-10 h-10 rounded-[12px] grad-primary flex items-center justify-center shadow-[var(--shadow-primary)]">
           <Layers className="w-5 h-5 text-white" strokeWidth={2} />
         </div>
         <span className="font-bold text-[22px] text-[var(--text)] tracking-tight">Drawspace</span>

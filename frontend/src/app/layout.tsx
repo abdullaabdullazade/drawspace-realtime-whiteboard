@@ -2,8 +2,51 @@ import type { Metadata } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'Drawspace - Premium Collaborative Workspace',
-  description: 'The most elegant collaborative whiteboard for modern teams.',
+  metadataBase: new URL('https://drawspace.app'),
+  title: {
+    default: 'Drawspace — Real-time Collaborative Whiteboard',
+    template: '%s · Drawspace',
+  },
+  description:
+    'Drawspace is a real-time collaborative whiteboard — draw together live, share a link, and let anyone join and edit without signing in. Infinite canvas, live cursors, images and text. Built with NestJS, WebSockets, PostgreSQL and Next.js.',
+  applicationName: 'Drawspace',
+  authors: [{ name: 'Abdulla Abdullazade' }],
+  creator: 'Abdulla Abdullazade',
+  category: 'productivity',
+  keywords: [
+    'collaborative whiteboard',
+    'real-time whiteboard',
+    'online whiteboard',
+    'digital whiteboard',
+    'infinite canvas',
+    'drawing app',
+    'team collaboration',
+    'live collaboration',
+    'brainstorming tool',
+    'sketch tool',
+    'websocket',
+    'nestjs',
+    'nextjs',
+    'excalidraw alternative',
+    'miro alternative',
+    'figma alternative',
+  ],
+  openGraph: {
+    type: 'website',
+    url: 'https://drawspace.app',
+    siteName: 'Drawspace',
+    title: 'Drawspace — Real-time Collaborative Whiteboard',
+    description:
+      'Draw together live and share a link — no login needed. Infinite canvas with real-time sync.',
+    images: [{ url: '/og.png', width: 1200, height: 630, alt: 'Drawspace collaborative whiteboard' }],
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'Drawspace — Real-time Collaborative Whiteboard',
+    description: 'Draw together live and share a link — no login needed.',
+    images: ['/og.png'],
+  },
+  robots: { index: true, follow: true },
 };
 
 export default function RootLayout({

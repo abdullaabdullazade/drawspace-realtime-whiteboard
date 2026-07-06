@@ -100,6 +100,18 @@ export class CanvasGateway implements OnGatewayConnection, OnGatewayDisconnect {
     return { event: 'board:left' };
   }
 
+  // Live streaming of an in-progress stroke — broadcast only, no DB persist
+  @SubscribeMessage('draw:progress')
+  handleDrawProgress(
+    @ConnectedSocket() client: AuthSocket,
+    @MessageBody() payload: { boardId: string; element: Record<string, unknown> },
+  ) {
+    client.to(payload.boardId).emit('draw:progress', {
+      userId: client.userId,
+      element: payload.element,
+    });
+  }
+
   @SubscribeMessage('draw')
   async handleDraw(
     @ConnectedSocket() client: AuthSocket,

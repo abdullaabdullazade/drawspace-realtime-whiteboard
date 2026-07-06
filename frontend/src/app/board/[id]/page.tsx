@@ -133,9 +133,13 @@ export default function BoardPage() {
 
     const join = () => { setConnected(true); socket.emit('board:join', { boardId: id }); };
     const onDisconnect = () => setConnected(false);
-    const onDraw = ({ element }: { userId: string; element: DrawElement }) => {
+    const onDraw = ({ userId, element }: { userId: string; element: DrawElement }) => {
+      canvasRef.current?.clearLiveStroke(userId);
       canvasRef.current?.addRemoteElement(element);
       setRxCount((c) => c + 1);
+    };
+    const onDrawProgress = ({ userId, element }: { userId: string; element: DrawElement }) => {
+      canvasRef.current?.setLiveStroke(userId, element);
     };
     const onJoined = ({ userId }: { userId: string }) => {
       setOnlineUsers((prev) => prev.find((u) => u.id === userId) ? prev : [...prev, {
@@ -143,7 +147,10 @@ export default function BoardPage() {
         color: USER_COLORS[prev.length % USER_COLORS.length], cursor: { x: 0, y: 0 },
       }]);
     };
-    const onLeft = ({ userId }: { userId: string }) => setOnlineUsers((prev) => prev.filter((u) => u.id !== userId));
+    const onLeft = ({ userId }: { userId: string }) => {
+      canvasRef.current?.clearLiveStroke(userId);
+      setOnlineUsers((prev) => prev.filter((u) => u.id !== userId));
+    };
     const onCursor = ({ userId, x, y }: { userId: string; x: number; y: number }) =>
       setOnlineUsers((prev) => prev.map((u) => u.id === userId ? { ...u, cursor: { x, y } } : u));
 
@@ -152,17 +159,17 @@ export default function BoardPage() {
     socket.on('disconnect', onDisconnect);
     socket.on('connect_error', onDisconnect);
     socket.on('draw', onDraw);
+    socket.on('draw:progress', onDrawProgress);
     socket.on('user:joined', onJoined);
     socket.on('user:left', onLeft);
     socket.on('cursor:moved', onCursor);
 
     return () => {
-      // Remove only OUR handlers (named) — don't wipe the singleton's other listeners,
-      // and don't leave the room on StrictMode double-mount (would drop live sync).
       socket.off('connect', join);
       socket.off('disconnect', onDisconnect);
       socket.off('connect_error', onDisconnect);
       socket.off('draw', onDraw);
+      socket.off('draw:progress', onDrawProgress);
       socket.off('user:joined', onJoined);
       socket.off('user:left', onLeft);
       socket.off('cursor:moved', onCursor);
@@ -174,6 +181,16 @@ export default function BoardPage() {
     setSaveStatus('saving');
     getSocket(token).emit('draw', { boardId: id, element: el });
     setTimeout(() => setSaveStatus('saved'), 800);
+  }, [id]);
+
+  // Stream the in-progress stroke live (throttled) so others see it draw point-by-point
+  const lastProgressRef = useRef(0);
+  const handleDrawProgress = useCallback((el: DrawElement) => {
+    const t = performance.now();
+    if (t - lastProgressRef.current < 45) return;
+    lastProgressRef.current = t;
+    const token = localStorage.getItem('token');
+    getSocket(token).emit('draw:progress', { boardId: id, element: el });
   }, [id]);
 
   // Snapshot every change to localStorage so reopening restores the exact state
@@ -403,7 +420,7 @@ export default function BoardPage() {
           onDragOver={(e) => e.preventDefault()}
         >
           <div className="absolute inset-0">
-            <Canvas ref={canvasRef} tool={tool} color={color} brushSize={brushSize} onDraw={handleDraw} onChange={saveSnapshot} onSelectAll={() => setTool('select')} zoom={zoom} panX={pan.x} panY={pan.y} onPan={(dx, dy) => { viewDirtyRef.current = true; setPan((p) => ({ x: p.x + dx, y: p.y + dy })); }} />
+            <Canvas ref={canvasRef} tool={tool} color={color} brushSize={brushSize} onDraw={handleDraw} onDrawProgress={handleDrawProgress} onChange={saveSnapshot} onSelectAll={() => setTool('select')} zoom={zoom} panX={pan.x} panY={pan.y} onPan={(dx, dy) => { viewDirtyRef.current = true; setPan((p) => ({ x: p.x + dx, y: p.y + dy })); }} />
             <CursorOverlay users={onlineUsers} />
 
             {/* Editable image overlay (world → screen) */}

@@ -31,6 +31,8 @@ export interface CanvasRef {
   placeImage: (img: { src: string; x: number; y: number; w: number; h: number }) => void;
   loadElements: (els: DrawElement[]) => void;
   getContentBounds: () => { minX: number; minY: number; maxX: number; maxY: number } | null;
+  setLiveStroke: (id: string, el: DrawElement) => void;
+  clearLiveStroke: (id: string) => void;
 }
 
 interface CanvasProps {
@@ -38,6 +40,7 @@ interface CanvasProps {
   color: string;
   brushSize: 2 | 6 | 12;
   onDraw: (el: DrawElement) => void;
+  onDrawProgress?: (el: DrawElement) => void;
   onChange?: (els: DrawElement[]) => void;
   onSelectAll?: () => void;
   zoom: number;
@@ -154,11 +157,14 @@ function scaleElement(el: DrawElement, px: number, py: number, fx: number, fy: n
 }
 
 const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas(
-  { tool, color, brushSize, onDraw, onChange, onSelectAll, zoom, panX, panY, onPan },
+  { tool, color, brushSize, onDraw, onDrawProgress, onChange, onSelectAll, zoom, panX, panY, onPan },
   ref
 ) {
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
+  const onProgressRef = useRef(onDrawProgress);
+  onProgressRef.current = onDrawProgress;
+  const liveStrokesRef = useRef<Map<string, DrawElement>>(new Map());
   const onSelectAllRef = useRef(onSelectAll);
   onSelectAllRef.current = onSelectAll;
   const emitChange = useCallback(() => { onChangeRef.current?.(elementsRef.current); }, []);
@@ -208,6 +214,8 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas(
     ctx.setTransform(scale * d, 0, 0, scale * d, -panX * scale * d, -panY * scale * d);
     for (const el of elementsRef.current) drawElement(ctx, el, () => paint());
     if (currentElementRef.current) drawElement(ctx, currentElementRef.current);
+    // Remote in-progress strokes (streamed live)
+    for (const el of liveStrokesRef.current.values()) drawElement(ctx, el, () => paint());
 
     // Selection overlay (crisp regardless of zoom)
     const lw = 1.5 / scale;
@@ -413,6 +421,8 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas(
     if (tool === 'pencil' || tool === 'eraser') el.points!.push(w);
     else { el.x2 = w.x; el.y2 = w.y; }
     paint();
+    // Stream the in-progress stroke to collaborators (skip eraser)
+    if (tool !== 'eraser') onProgressRef.current?.(el);
   }, [tool, eraserPos, scale, onPan, toWorld, paint]);
 
   const onMouseUp = useCallback(() => {
@@ -559,6 +569,13 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas(
       undoStackRef.current = [];
       redoStackRef.current = [];
       requestAnimationFrame(() => paint());
+    },
+    setLiveStroke(id: string, el: DrawElement) {
+      liveStrokesRef.current.set(id, el);
+      paint();
+    },
+    clearLiveStroke(id: string) {
+      if (liveStrokesRef.current.delete(id)) paint();
     },
     getContentBounds() {
       if (!elementsRef.current.length) return null;

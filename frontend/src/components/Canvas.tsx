@@ -357,6 +357,9 @@ const Canvas = forwardRef<CanvasRef, CanvasProps>(function Canvas(
     if (tool === 'image') return;
 
     if (tool === 'text') {
+      // Prevent the browser's default mousedown focus change from immediately
+      // blurring (and committing) the text input we're about to mount.
+      e.preventDefault();
       if (textEdit) { commitText(); return; }
       const w = toWorld(e.clientX, e.clientY);
       setTextEdit({ wx: w.x, wy: w.y });

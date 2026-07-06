@@ -18,12 +18,12 @@ execSync(
   `-frames:v 1 ${OUT}/asset.png -loglevel error`
 );
 
-async function stroke(page, pts, hold = 45) {
+async function stroke(page, pts, hold = 70) {
   await page.mouse.move(pts[0][0], pts[0][1]);
   await page.mouse.down();
-  for (const [x, y] of pts) { await page.mouse.move(x, y, { steps: 14 }); await page.waitForTimeout(hold); }
+  for (const [x, y] of pts) { await page.mouse.move(x, y, { steps: 18 }); await page.waitForTimeout(hold); }
   await page.mouse.up();
-  await page.waitForTimeout(250);
+  await page.waitForTimeout(300);
 }
 const star = (cx, cy, r = 70) => {
   const p = []; for (let i = 0; i <= 10; i++) { const rad = (i % 2 ? r * 0.42 : r); const a = -Math.PI / 2 + i * Math.PI / 5; p.push([cx + Math.cos(a) * rad, cy + Math.sin(a) * rad]); } return p;
@@ -104,11 +104,11 @@ execSync(
   `"[0:v]drawbox=x=0:y=0:w=iw:h=46:color=0x16A34A:t=fill,drawtext=text='User — logged in':x=24:y=10:fontsize=24:fontcolor=white[a];` +
   `[1:v]tpad=start_duration=${offset}:start_mode=add:color=0xF4FAF6,` +
   `drawbox=x=0:y=0:w=iw:h=46:color=0x0EA5E9:t=fill,drawtext=text='Guest — shared link, no login':x=24:y=10:fontsize=24:fontcolor=white[b];` +
-  `[a][b]hstack=inputs=2,scale=2200:-2" -c:v libx264 -crf 20 -preset slow -pix_fmt yuv420p -movflags +faststart ${OUT}/demo.mp4 -loglevel error`
+  `[a][b]hstack=inputs=2" -c:v libx264 -crf 16 -preset veryslow -pix_fmt yuv420p -movflags +faststart ${OUT}/demo.mp4 -loglevel error`
 );
-// High-quality gif (palette) for the README
-execSync(`ffmpeg -y -i ${OUT}/demo.mp4 -vf "fps=15,scale=1200:-1:flags=lanczos,palettegen=stats_mode=diff" ${OUT}/pal.png -loglevel error`);
-execSync(`ffmpeg -y -i ${OUT}/demo.mp4 -i ${OUT}/pal.png -lavfi "fps=15,scale=1200:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=bayer:bayer_scale=3" ${OUT}/demo.gif -loglevel error`);
+// High-quality gif (full-stats palette) of the live-collaboration highlight
+execSync(`ffmpeg -y -ss 22 -t 24 -i ${OUT}/demo.mp4 -vf "fps=16,scale=1200:-1:flags=lanczos,palettegen=stats_mode=full" ${OUT}/pal.png -loglevel error`);
+execSync(`ffmpeg -y -ss 22 -t 24 -i ${OUT}/demo.mp4 -i ${OUT}/pal.png -lavfi "fps=16,scale=1200:-1:flags=lanczos[x];[x][1:v]paletteuse=dither=floyd_steinberg" ${OUT}/demo.gif -loglevel error`);
 
 console.log('DONE');
 console.log('offset(s):', offset);
